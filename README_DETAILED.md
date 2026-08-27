@@ -145,32 +145,40 @@ Every `TODO` / `NotImplementedError` in the repo, in the order they block each o
 
 ## 4. What later homeworks build on this
 
-The handouts themselves are Overleaf PDFs (not machine-readable), so below is what the homework page, syllabus, and lecture schedule state, plus how it maps onto this codebase. Confirm specifics against each handout when released.
+Source: the actual handouts in [`docs/handouts/`](docs/handouts/) (`hw1.pdf` … `hw4.pdf`).
 
-| HW | Due (2026) | Weight | Focus |
+| HW | Due (2026) | Points | Focus |
 |---|---|---|---|
-| 1 | Jan 24 | 15 % | Set up codebase, implement DDPM |
-| 2 | Feb 5 | 15 % | Implement flow matching; choose a path (Fidelity / Controllability / Speed) |
-| 3 | Feb 15 | 20 % | Implement baseline methods for your path |
-| 4 | Feb 27 | 20 % | Improve on your baselines ("beat your own baselines and compete with classmates") |
-| Poster | Feb 25 submit / Feb 26 present | 15 % | Showcase the full project |
+| 1 | Jan 24 | 80 (+20 EC) | DDPM implementation, KID < 0.005 with 1k samples |
+| 2 | Feb 5 | 100 | Flow matching + DDIM sampler; pick a track |
+| 3 | Feb 15 | 100 | Research foundation: problem definition, lit survey, baseline implementation |
+| 4 | Feb 27 | 100 | Your own method: beat the baseline, ablations, write-up |
+| Poster | Feb 25 submit / Feb 26 present | — | Full project |
 
-### HW2 — Flow matching
-- Add **`src/methods/flow_matching.py`** with a `FlowMatching(BaseMethod)` class — the codebase already anticipates it: `scripts/train.sh` documents `sbatch scripts/train.sh flow_matching`, notebook 03 imports `from src.methods import DDPM, FlowMatching`, and the base class's `compute_loss`/`sample` interface is method-agnostic. Register it in `src/methods/__init__.py` and in the `if args.method == 'ddpm'` dispatch in `train.py` / `sample.py`.
-- Same UNet, but `t` becomes continuous in `[0,1]` (the `unet.py` smoke test already feeds `torch.rand` timesteps — design your time embedding to accept floats). Loss = regress a velocity field on the linear interpolant; sampling = ODE integration (Euler / Heun) over `num_steps`.
-- New config `configs/flow_matching_*.yaml` with a `flow_matching:` section instead of `ddpm:`.
-- Notebook 01 is explicitly titled "Diffusion & **Flow Matching**" — extend it with the FM variant for a 1-D sanity check.
-- Lecture 4 (score-based models) and 5 (flow matching) are the theory; lecture 6 (design space / solvers) informs the sampler.
+### HW1 — DDPM (what the handout actually asks)
+- **Part I (10):** grid of ≥16 dataset samples; hypothesize the attribute filters used to build the subset; would a full-CelebA SOTA model still be SOTA on this subset under FID/KID; what augmentation you'll use.
+- **Part II (25):** train DDPM (report model size, batch size, iterations, loss curve, GPU-hours); 16-sample grid; **KID with 1k samples, mean ± std, target < 0.005**; submit code zip.
+- **Part III (15):** debugging scenarios (nice loss but pure-noise samples; bumpy non-zero loss; converged model with over-saturated/clipped samples).
+- **Part IV (10 + 20 EC):** sampling-steps ablation — KID at 100/300/500/700/900/1000 DDPM steps with one sample each. Extra credit: derive and implement an alternative parametrization (e.g. x₀- or v-prediction) and compare.
+- **Part V (10):** reflection + resource list.
 
-### HW3 — Baselines for your chosen path
-Everything here plugs into `sample()` (sampler-side) or `compute_loss()` + the model/config (training-side). Lecture coverage in parentheses.
+### HW2 — Flow matching & DDIM
+- New file **`src/methods/flow_matching.py`**: `FlowMatching(BaseMethod)` with the same `compute_loss` / `sample` interface (the handout says this explicitly). Same architecture, iterations and batch size as your DDPM. Euler-integration sampling. Target KID < 0.005.
+- **DDIM sampling added to `ddpm.py`** — deterministic, uses your existing trained DDPM, no retraining. The update rule is given in the handout (predict x̂₀ from ε, step along a sub-sequence of timesteps).
+- Add configs and scripts for both; extend `train.py` / `sample.py` dispatch.
+- **Ablation:** KID table for Flow Matching and DDIM at 1/5/10/50/100/200/1000 steps, compared with DDPM-1000.
+- **Track selection** (Fidelity: KID/FID; Controllability: you define the metric, e.g. attribute-classifier accuracy or CLIP score; Speed: steps needed to reach KID < 0.005).
 
-- **Speed** (lectures 6, 10): fewer-step samplers — DDIM, DPM-Solver / higher-order ODE solvers — implemented as alternative `sample()` strategies selected by `sampling.sampler` (the config already has this key as a "placeholder where you can add more options"). Then distillation / consistency models / flow maps, which need a teacher–student training loop: a second model, a new method class, and changes to `train.py`'s loop. Evaluate FID/KID vs. number of function evaluations via `--num_steps`.
-- **Controllability** (lecture 7): conditional generation. The dataset ships `attributes.csv` (CelebA attributes) but `__getitem__` deliberately drops labels — you'll return `(image, label)`, add a class/attribute embedding to the UNet (added to the time embedding), implement **classifier-free guidance** (label dropout in `compute_loss`, guided ε in `reverse_process`), and possibly training-free editing / inpainting via modified sampling.
-- **Fidelity** (lecture 9): image-quality improvements — larger/better-tuned UNets, EDM-style preconditioning and noise schedules (lecture 6), latent diffusion (train on autoencoder latents; would add an encoder/decoder around the dataloader and sampler), or a DiT transformer backbone as a drop-in for `UNet` behind `create_model_from_config`.
+### HW3 — Baseline for your track (mini research project, part 1)
+Written like a paper: motivation & problem statement (inputs/outputs/assumptions/metrics), literature survey of 4–6 methods with a comparison table, choose one baseline and explain it (key insight, pseudocode, key equation, hyperparameters), implement it on top of this codebase, show preliminary results, brainstorm HW4 ideas. Track may still change here; it locks after HW3. Handout's suggested sub-problems:
+- **Fidelity:** better architectures (DiT, U-ViT), noise-schedule tuning, loss modifications, advanced samplers.
+- **Controllability:** attribute-conditional generation, text-to-image, image-to-image, editing, inverse problems, style transfer, spatial control.
+- **Speed:** 1-step / few-step generation, better ODE solvers, adaptive step sizes, distillation, flow maps (MeanFlow is cited in HW4).
 
-### HW4 — Beat your baselines
-Open-ended improvements on the same path; you're encouraged to use pre-trained models and open-source repos. Metrics stay FID/KID/IS via `evaluate_torch_fidelity.sh`, so keep sampling behind the `sample.py` interface so evaluation keeps working. Lectures 12–13 (discrete / masked diffusion, discrete flow matching) are also available as directions.
+Hard rules for HW3/4: build on this codebase; same CelebA 64×64 subset for all evaluation (extra data / pretrained models allowed if the method needs them); cite any code you incorporate.
+
+### HW4 — Your own method (part 2)
+Recap → method (what's new, hypothesis, why non-trivial, full details) → experiments (quantitative vs. baseline, qualitative side-by-side, **component ablation and hyperparameter ablation**, failure cases) → discussion & conclusion. Valid novelty = combining two papers, adapting a method to this setting, a motivated new loss/trick/architecture change, or a well-understood negative result. Not sufficient: hyperparameter tuning, training longer/bigger, or re-implementing a second paper unchanged.
 
 ### Practical implications for how you write HW1
 1. Keep **all** math inside the method class; never special-case DDPM in `train.py`.
