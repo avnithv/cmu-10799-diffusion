@@ -237,7 +237,7 @@ def generate_samples(
     if use_ema:
         ema.apply_shadow()
 
-    samples = None
+    samples = method.sample(batch_size=num_samples, image_shape=image_shape)
     # TODO: sample with your method.sample()
 
     if use_ema:
@@ -250,18 +250,30 @@ def generate_samples(
 def save_samples(
     samples: torch.Tensor,
     save_path: str,
-    num_samples: int,
+    num_samples: Optional[int] = None,
+    nrow: Optional[int] = None,
 ) -> None:
     """
-    TODO: save generated samples as images.
+    Save generated samples as an image grid.
 
     Args:
-        samples: Generated samples tensor with shape (num_samples, C, H, W).
+        samples: Generated samples tensor with shape (num_samples, C, H, W), in [-1, 1].
         save_path: File path to save the image grid.
         num_samples: Number of samples, used to calculate grid layout.
+        nrow: Images per row; defaults to a square-ish grid.
     """
+    if num_samples is not None:
+        samples = samples[:num_samples]
+    if nrow is None:
+        nrow = math.ceil(math.sqrt(samples.shape[0]))
 
-    raise NotImplementedError
+    # model output isn't guaranteed to stay in [-1, 1], so clamp after unnormalizing
+    images = unnormalize(samples.detach().cpu()).clamp(0.0, 1.0)
+
+    dirname = os.path.dirname(save_path)
+    if dirname:
+        os.makedirs(dirname, exist_ok=True)
+    save_image(images, save_path, nrow=nrow)
 
 
 def train(

@@ -25,14 +25,16 @@ What you need to implement:
 import os
 import sys
 import argparse
+import math
 from datetime import datetime
+from typing import Optional
 
 import yaml
 import torch
 from tqdm import tqdm
 
 from src.models import create_model_from_config
-from src.data import save_image
+from src.data import save_image, unnormalize
 from src.methods import DDPM
 from src.utils import EMA
 
@@ -56,18 +58,30 @@ def load_checkpoint(checkpoint_path: str, device: torch.device):
 def save_samples(
     samples: torch.Tensor,
     save_path: str,
-    num_samples: int,
+    num_samples: Optional[int] = None,
+    nrow: Optional[int] = None,
 ) -> None:
     """
-    TODO: save generated samples as images.
+    Save generated samples as an image grid.
 
     Args:
-        samples: Generated samples tensor with shape (num_samples, C, H, W).
+        samples: Generated samples tensor with shape (num_samples, C, H, W), in [-1, 1].
         save_path: File path to save the image grid.
         num_samples: Number of samples, used to calculate grid layout.
+        nrow: Images per row; defaults to a square-ish grid.
     """
+    if num_samples is not None:
+        samples = samples[:num_samples]
+    if nrow is None:
+        nrow = math.ceil(math.sqrt(samples.shape[0]))
 
-    raise NotImplementedError
+    # model output isn't guaranteed to stay in [-1, 1], so clamp after unnormalizing
+    images = unnormalize(samples.detach().cpu()).clamp(0.0, 1.0)
+
+    dirname = os.path.dirname(save_path)
+    if dirname:
+        os.makedirs(dirname, exist_ok=True)
+    save_image(images, save_path, nrow=nrow)
 
 
 def main():
@@ -166,7 +180,7 @@ def main():
             else:
                 for i in range(samples.shape[0]):
                     img_path = os.path.join(args.output_dir, f"{sample_idx:06d}.png")
-                    save_samples(samples, img_path, 1)
+                    save_samples(samples[i:i + 1], img_path, 1)
                     sample_idx += 1
 
             remaining -= batch_size
