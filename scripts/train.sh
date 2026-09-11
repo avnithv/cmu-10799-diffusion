@@ -3,10 +3,11 @@
 #SBATCH --output=logs/%x_%j.out
 #SBATCH --error=logs/%x_%j.err
 #SBATCH --time=24:00:00
-#SBATCH --partition=general
-#SBATCH --gres=gpu:L40S:4
+#SBATCH --partition=koes_gpu
+#SBATCH --gres=gpu:1
+#SBATCH -C "L40"
 #SBATCH --cpus-per-task=8
-#SBATCH --mem=64G
+#SBATCH --mem=32G
 
 # =============================================================================
 # SLURM Job Script for CMU 10799 Diffusion & Flow Matching Homework
