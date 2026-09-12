@@ -1,0 +1,142 @@
+# DDPM on CelebA-64 — CSB cluster config
+# Based on configs/ddpm_babel.yaml; every value annotated with what it does,
+# the usual range, and what drives the choice.
+
+data:
+  dataset: "celeba"
+  # Path where download_dataset.py put the Arrow files, relative to the repo root
+  # on the cluster. Absolute paths also work; keep it on the shared filesystem.
+  root: "/net/galaxy/home/koes/avijayra/test/cmu-10799-diffusion/data/celeba/"
+  # false = load from the local `root` above (we pre-downloaded on the head node).
+  # true = stream from HuggingFace at startup — avoid in batch jobs; compute
+  # nodes' network access is not something to depend on.
+  from_hub: false
+  repo_name: "electronickale/cmu-10799-celeba64-subset"
+  image_size: 64        # fixed by the assignment (CelebA-64); the U-Net's res ledger assumes it
+  channels: 3           # RGB
+  # Parallel dataloader workers. Range 2-8; more helps only if the GPU is
+  # data-starved. Must stay below --cpus-per-task in the sbatch header (8).
+  num_workers: 4
+  pin_memory: true      # faster host->GPU copies; essentially free, leave on
+  augment: true         # random horizontal flips; cheap variance reduction for faces
+
+model:
+  # Width of the first conv / the finest level. The single biggest knob for
+  # capacity AND memory/speed (params scale ~quadratically with it).
+  # Range 64-256: 64 for quick experiments (~20M params), 128 standard for
+  # 64x64 (79.3M here, matches our smoke test), 192-256 for ImageNet-scale.
+  base_channels: 128
+  # Per-level width multipliers; length sets the number of resolutions
+  # (4 levels: 64->32->16->8). Deeper/wider tails are common at higher res.
+  # [1,2,2,4] is the DDPM-paper-style choice for 64x64; [1,2,4,8] trades a lot
+  # more memory for capacity at the coarsest level.
+  channel_mult: [1, 2, 2, 4]
+  # ResBlocks per level in the encoder (decoder gets +1). Range 1-3.
+  # 2 is standard; 3 adds depth at ~1.5x cost, 1 for fast ablations.
+  num_res_blocks: 2
+  # Feature-map sizes that get self-attention. Attention is O((H*W)^2), so only
+  # coarse maps are affordable: [16,8] is standard for 64x64 inputs. Adding 32
+  # roughly quadruples attention cost for marginal gain; [8] alone is the
+  # budget option.
+  attention_resolutions: [16, 8]
+  # Attention heads. Keep head_dim = channels/num_heads around 32-128.
+  # At 16x16 channels are 256 -> 4 heads = 64 per head. Range 1-8.
+  num_heads: 4
+  # Dropout inside ResBlocks. Range 0.0-0.3. CelebA subset is small-ish, so
+  # 0.1 (the DDPM paper's value) guards overfitting; 0.0 if underfitting.
+  dropout: 0.1
+  # FiLM-style conditioning: norm(h)*(1+scale)+shift from the time embedding,
+  # instead of plain addition. Slightly better conditioning at no real cost;
+  # modern implementations default to true.
+  use_scale_shift_norm: true
+
+training:
+  # Images per gradient step. Bounded by VRAM: ~64 fits any >=16GB card at
+  # this model size; an L40/A100 (40-46GB) takes 128+. Larger batches give
+  # smoother gradients but fewer steps per hour; diffusion tolerates 32-256.
+  batch_size: 64
+  # Adam step size. The most sensitive scalar: 1e-4 is the de-facto standard
+  # for 64x64 diffusion (Ho et al. used 2e-4 at 32x32). Range 1e-5 to 3e-4;
+  # too high shows up as loss spikes/NaNs, too low as glacial convergence.
+  learning_rate: 1.0e-4
+  # L2 regularization via the optimizer. Diffusion models almost universally
+  # use 0.0 — dropout + EMA do the regularizing; nonzero values (1e-4-ish)
+  # are rare and mostly harmless.
+  weight_decay: 0.0
+  # Adam's momentum coefficients (gradient mean / variance). [0.9, 0.999] is
+  # the near-universal default; some large runs drop beta2 to 0.99 for
+  # stability. Don't tune this first.
+  betas: [0.9, 0.999]
+  # Exponential moving average of weights, used for sampling/eval. Closer to 1
+  # = smoother/slower-moving average. Range 0.995-0.9999; 0.9999 suits runs of
+  # ~100k+ steps (effective window ~1/(1-decay) = 10k steps). Short runs want
+  # 0.999 or the EMA never "catches up".
+  ema_decay: 0.9999
+  # Iteration at which sampling starts using EMA weights. Before the EMA has
+  # seen a few thousand steps it's meaningless; ~5% of total iterations is a
+  # sane default.
+  ema_start: 5000
+  # Clip gradient norm to this value. 1.0 is standard; range 0.5-2.0 (or off).
+  # Cheap insurance against the occasional exploding step early in training.
+  gradient_clip_norm: 1.0
+  # Total optimizer steps. Quality keeps improving slowly for a long time:
+  # ~50k gives recognizable faces, 100k-200k is the sweet spot for this
+  # dataset/size, papers go 500k+. Bounded here by your GPU-hours; 100k at
+  # ~2 it/s is ~14h, inside the 24h walltime.
+  num_iterations: 100000
+  # Console/wandb logging cadence (steps). 50-500; only affects log volume.
+  log_every: 100
+  # How often to run the full 1000-step sampler for preview grids. Each
+  # preview costs real minutes of GPU time, so keep it sparse: 2500-10000.
+  sample_every: 5000
+  # Checkpoint cadence. Each checkpoint (model+EMA+optimizer) is ~1GB here, so
+  # 10000 -> ~10 checkpoints/run: enough resume granularity without eating the
+  # shared filesystem.
+  save_every: 10000
+  # Images per preview grid. 16 (4x4) is enough to judge quality; 64 makes
+  # previews 4x slower for little extra signal.
+  num_samples: 16
+
+ddpm:
+  # Length T of the forward noising chain. 1000 is the DDPM-paper standard the
+  # beta range below is calibrated for; fewer (250-500) trains faster per unit
+  # quality ceiling, more (2000-4000) shows up in later work with adjusted
+  # schedules. HW Q7's strided sampling reuses this same trained chain.
+  num_timesteps: 1000
+  # First/last values of the linear beta (noise variance) schedule.
+  # 1e-4 -> 0.02 over 1000 steps is THE reference pair (Ho et al.); it's tuned
+  # so x_T is indistinguishable from pure noise while early steps stay gentle.
+  # If you change num_timesteps, these must be rescaled to keep the cumulative
+  # noise (alpha-bar at T) comparable.
+  beta_start: 1.0e-4
+  beta_end: 0.02
+sampling:
+  # Reverse-process steps at inference. Full quality = num_timesteps (1000).
+  # Q7 ablates 100-900 via the strided sampler; sample.py reads this as the
+  # default when --num_steps isn't given, so keep it at 1000 for the baseline.
+  num_steps: 1000
+  sampler: "ddpm"
+
+infrastructure:
+  seed: 42              # RNG seed for reproducibility; any fixed int is fine
+  device: "cuda"
+  # Number of GPUs. 1 keeps train.sh on the plain-python path (no torchrun);
+  # this model doesn't need more, and single-GPU avoids DDP complexity.
+  num_gpus: 1
+  # Autocast fp16/bf16 training: ~1.5-2x faster and half the activation
+  # memory. Start false for the first verified run (one less variable when
+  # debugging); flip to true afterwards if you want the speed — losses should
+  # match to within noise.
+  mixed_precision: false
+  compile_model: false  # torch.compile; repo says only false is tested
+
+checkpoint:
+  dir: "./checkpoints"  # ~1GB per save; home quota on /net/galaxy is shared but large
+  resume: null          # or pass --resume checkpoints/ddpm_50000.pt on the sbatch line
+
+logging:
+  dir: "./logs"
+  wandb:
+    enabled: true       # requires one-time `wandb login` on the head node; set false to skip
+    project: "cmu-10799-diffusion"
+    entity: null        # null = your personal wandb account
