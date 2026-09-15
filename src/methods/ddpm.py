@@ -40,7 +40,11 @@ class DDPM(BaseMethod):
         self.register_buffer("sqrt_betas", betas.sqrt())
         self.register_buffer("sqrt_alphas_cumprod", alphas_cumprod.sqrt())
         self.register_buffer("sqrt_one_minus_alphas_cumprod", (1.0 - alphas_cumprod).sqrt())
-        # TODO: Implement your own init
+
+        # train.py/sample.py never call method.to(device), so placement must
+        # happen at construction — and BaseMethod.to() only moves self.model,
+        # stranding the buffers above on CPU (our to() below bypasses it).
+        self.to(device)
 
     def _extract(self, coeffs, t, x):
         """
@@ -190,7 +194,9 @@ class DDPM(BaseMethod):
     # =========================================================================
 
     def to(self, device: torch.device) -> "DDPM":
-        super().to(device)
+        # Bypass BaseMethod.to (it moves only self.model): nn.Module.to moves
+        # child modules AND registered buffers, which is what we need.
+        nn.Module.to(self, device)
         self.device = device
         return self
 
