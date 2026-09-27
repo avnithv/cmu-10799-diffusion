@@ -41,6 +41,13 @@ class DDPM(BaseMethod):
         self.register_buffer("sqrt_alphas_cumprod", alphas_cumprod.sqrt())
         self.register_buffer("sqrt_one_minus_alphas_cumprod", (1.0 - alphas_cumprod).sqrt())
 
+        # Posterior variance β̃_t = β_t · (1-ᾱ_{t-1})/(1-ᾱ_t): the variance of
+        # q(x_{t-1} | x_t, x_0). Always ≤ β_t; exactly 0 at t=0 (ᾱ_{-1} ≡ 1).
+        alphas_cumprod_prev = torch.cat([torch.ones(1), alphas_cumprod[:-1]])
+        posterior_variance = betas * (1.0 - alphas_cumprod_prev) / (1.0 - alphas_cumprod)
+        self.register_buffer("alphas_cumprod_prev", alphas_cumprod_prev)
+        self.register_buffer("sqrt_posterior_variance", posterior_variance.sqrt())
+
         # train.py/sample.py never call method.to(device), so placement must
         # happen at construction — and BaseMethod.to() only moves self.model,
         # stranding the buffers above on CPU (our to() below bypasses it).
@@ -109,27 +116,32 @@ class DDPM(BaseMethod):
     # =========================================================================
     
     @torch.no_grad()
-    def reverse_process(self, x_t: torch.Tensor, t: torch.Tensor) -> torch.Tensor:
+    def reverse_process(self, x_t: torch.Tensor, t: torch.Tensor, variance: str = "beta") -> torch.Tensor:
         """
         TODO: Implement one step of the DDPM reverse process
 
         Args:
             x_t: Noisy samples at time t (batch_size, channels, height, width)
             t: the time
-            **kwargs: Additional method-specific arguments
-        
+            variance: noise scale for the injected z — "beta" uses σ²=β_t
+                      (Ho et al.'s upper-bound choice), "posterior" uses the true
+                      posterior variance β̃_t (smaller, especially at low t)
+
         Returns:
             x_prev: Noisy samples at time t-1 (batch_size, channels, height, width)
         """
         sqrt_one_minus_alpha_bar = self._extract(self.sqrt_one_minus_alphas_cumprod, t, x_t)
         sqrt_alphas = self._extract(self.sqrt_alphas, t, x_t)
         beta_t = self._extract(self.betas, t, x_t)
-        sqrt_beta_t = self._extract(self.sqrt_betas, t, x_t)
+        if variance == "posterior":
+            sigma_t = self._extract(self.sqrt_posterior_variance, t, x_t)
+        else:
+            sigma_t = self._extract(self.sqrt_betas, t, x_t)
         # per-sample mask: 1 where t > 0 (add noise), 0 where t == 0 (final step is deterministic)
         # reshape (B,) -> (B, 1, ..., 1) so it broadcasts against x_t for any data shape
         nonzero_mask = (t > 0).float().view(-1, *([1] * (x_t.ndim - 1)))
         z = torch.randn_like(x_t) * nonzero_mask
-        x_prev = 1.0 / sqrt_alphas * (x_t - (beta_t / sqrt_one_minus_alpha_bar) * self.model(x_t, t)) + sqrt_beta_t * z
+        x_prev = 1.0 / sqrt_alphas * (x_t - (beta_t / sqrt_one_minus_alpha_bar) * self.model(x_t, t)) + sigma_t * z
         return x_prev
 
     @torch.no_grad()
@@ -139,7 +151,7 @@ class DDPM(BaseMethod):
         image_shape: Tuple[int, int, int],
         return_trajectory: bool = False,
         num_steps: int = None,
-        # TODO: add your arguments here
+        variance: str = "beta",   # "beta" (σ²=β) or "posterior" (σ²=β̃)
         **kwargs
     ) -> torch.Tensor:
         """
@@ -159,7 +171,7 @@ class DDPM(BaseMethod):
 
         if num_steps is None or num_steps == self.num_timesteps:
             for t in reversed(range(self.num_timesteps)):
-                x_prev = self.reverse_process(x_t, torch.tensor([t] * batch_size, device=self.device))
+                x_prev = self.reverse_process(x_t, torch.tensor([t] * batch_size, device=self.device), variance=variance)
                 x_t = x_prev
                 if return_trajectory:
                     trajectory.append(x_t)
@@ -175,10 +187,15 @@ class DDPM(BaseMethod):
                 t_vec = torch.tensor([t] * batch_size, device=self.device)
 
                 beta_eff = 1 - alpha_eff
+                # strided analogue of the variance choice: β̃_eff = β_eff · (1-ᾱ(t_next))/(1-ᾱ(t))
+                if variance == "posterior" and i < len(steps) - 1:
+                    sigma = torch.sqrt(beta_eff * (1 - self.alphas_cumprod[steps[i+1]]) / (1 - self.alphas_cumprod[t]))
+                else:
+                    sigma = torch.sqrt(beta_eff)
                 sqrt_one_minus_alpha_bar = self._extract(self.sqrt_one_minus_alphas_cumprod, t_vec, x_t)
                 nonzero_mask = (t_vec > 0).float().view(-1, *([1] * (x_t.ndim - 1)))
                 z = torch.randn_like(x_t) * nonzero_mask
-                x_prev = 1.0 / torch.sqrt(alpha_eff) * (x_t - (beta_eff / sqrt_one_minus_alpha_bar) * self.model(x_t, t_vec)) + torch.sqrt(beta_eff) * z
+                x_prev = 1.0 / torch.sqrt(alpha_eff) * (x_t - (beta_eff / sqrt_one_minus_alpha_bar) * self.model(x_t, t_vec)) + sigma * z
 
                 x_t = x_prev
                 if return_trajectory:

@@ -107,6 +107,9 @@ def main():
     # Sampling arguments
     parser.add_argument('--num_steps', type=int, default=None,
                        help='Number of sampling steps (default: from config)')
+    parser.add_argument('--variance', type=str, default='beta',
+                       choices=['beta', 'posterior'],
+                       help='Reverse-step noise variance: beta (σ²=β_t) or posterior (σ²=β̃_t)')
     
     # Other options
     parser.add_argument('--no_ema', action='store_true',
@@ -171,7 +174,7 @@ def main():
                 batch_size=batch_size,
                 image_shape=image_shape,
                 num_steps=num_steps,
-                # TODO: add your arugments here
+                variance=args.variance,
             )
 
             # Save individual images immediately or collect for grid
