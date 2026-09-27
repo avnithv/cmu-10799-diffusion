@@ -25,7 +25,7 @@ model:
   # capacity AND memory/speed (params scale ~quadratically with it).
   # Range 64-256: 64 for quick experiments (~20M params), 128 standard for
   # 64x64 (79.3M here, matches our smoke test), 192-256 for ImageNet-scale.
-  base_channels: 160        # EXPERIMENT C: bigger model (~124M params)
+  base_channels: 192        # COMBINED EXPERIMENT: 1.5x width (~178M params) + 2x batch
   # Per-level width multipliers; length sets the number of resolutions
   # (4 levels: 64->32->16->8). Deeper/wider tails are common at higher res.
   # [1,2,2,4] is the DDPM-paper-style choice for 64x64; [1,2,4,8] trades a lot
