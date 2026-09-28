@@ -19,13 +19,23 @@ source .venv-cuda*/bin/activate
 mkdir -p results
 
 echo "===== training: $CONFIG ====="
+# Marker so we can identify OUR run dir afterwards: "newest dir" is a race
+# when jobs run concurrently (bit us 2026-09-28: a resume job's eval grabbed
+# a still-training sibling's dir). A candidate must be newer than the marker
+# AND actually finished (has ddpm_final.pt) — excludes concurrent runs.
+MARKER="logs/.start_${SLURM_JOB_ID:-manual}"
+mkdir -p logs
+touch "$MARKER"
 python train.py --method ddpm --config "$CONFIG" || exit 1
 
-# newest run dir belongs to the training that just finished
-RUN_DIR=$(ls -td logs/ddpm_2* | head -1)
+RUN_DIR=""
+for d in $(find logs -maxdepth 1 -type d -name 'ddpm_2*' -newer "$MARKER" | sort); do
+    [ -f "$d/checkpoints/ddpm_final.pt" ] && RUN_DIR="$d"
+done
+rm -f "$MARKER"
 CKPT="$RUN_DIR/checkpoints/ddpm_final.pt"
-if [ ! -f "$CKPT" ]; then
-    echo "ERROR: no final checkpoint at $CKPT"; exit 1
+if [ -z "$RUN_DIR" ] || [ ! -f "$CKPT" ]; then
+    echo "ERROR: no finished run dir found (marker-based search)"; exit 1
 fi
 DATA=$(find data/celeba -maxdepth 3 -type d -name images | head -1)
 

@@ -109,11 +109,36 @@ cuda126` with a pinned index) — worth doing before any run that needs >20 GB.
 - Verification handle: `train/learning_rate` is logged to wandb every 100
   steps — the resumed run's first points must read 1e-5.
 
+## 2026-09-28: two "failures" that were both infrastructure, not science
+
+**exp-resume1e5: training SUCCEEDED.** 200k/200k steps in 10h08 at 2.78 it/s
+(run dir `logs/ddpm_20260927_222014/`); wandb confirms `train/learning_rate
+= 1e-5` for the whole resumed phase (the override worked) and start step
+100000. Training loss after +100k at decayed lr: **0.0150 — identical to the
+100k plateau** (decay bought no loss; KID verdict pending — loss and KID have
+diverged before in this project). The job's FAILED status was a
+**race in train_eval.sh**: its "newest logs/ddpm_2* dir" heuristic grabbed the
+*concurrently running* b64 job's dir (created later, no final checkpoint yet)
+→ error → exit 1. Fixed with a job-start marker file + finished-run filter.
+Eval to run separately via new `scripts/eval_ckpt.sh`.
+
+**exp-b64c192 (attempt 3): GPU cleared, HOST RAM killed it.** The GPU side
+finally worked — nonfatal cuDNN workspace warnings under the ~24 GB ceiling,
+then 2h05 of clean training at ~1.34 it/s (100k would be ~21 h). Died at step
+9999 — the **first checkpoint save** — with `DefaultCPUAllocator: can't
+allocate memory (errno 12)`: CPU RAM, not CUDA. torch.save stages every GPU
+tensor through host memory (model 0.7 GB + EMA 0.7 GB + Adam 1.4 GB for the
+178M model), on top of 8 dataloader workers and wandb, and the job's 32 GB
+cgroup ran dry on a final 10 MB. Fixes for attempt 4: `num_workers` 8→4 and
+`sbatch --mem=64G`. Cumulative OOM lesson now spans three distinct memory
+systems: GPU mapping ceiling (attempt 1), driver VMM (attempt 2), host cgroup
+(attempt 3) — same experiment, three different walls.
+
 ## Open items
 
-- In flight: `exp-b64c192` (pure capacity, attempt 3) and `exp-resume1e5`
-  (lr-decay resume, running since 2026-09-27; verify wandb train/learning_rate
-  = 1e-5 and start step = 100000).
+- To submit: capacity attempt 4 (`--mem=64G`, workers 4) and the standalone
+  KID eval of the finished resume model.
+- Piazza reality-check on the 0.005 target still outstanding.
 - **Reality-check the 0.005 target** on Piazza/with classmates — three sensible
   interventions floor at ~0.043 with a validated pipeline; knowing the class
   distribution decides whether to keep spending GPU-days.

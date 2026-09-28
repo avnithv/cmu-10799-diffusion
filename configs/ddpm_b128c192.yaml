@@ -16,7 +16,7 @@ data:
   channels: 3           # RGB
   # Parallel dataloader workers. Range 2-8; more helps only if the GPU is
   # data-starved. Must stay below --cpus-per-task in the sbatch header (8).
-  num_workers: 8
+  num_workers: 4            # back to 4: 8 workers + 178M checkpoint serialization exhausted 32G host RAM
   pin_memory: true      # faster host->GPU copies; essentially free, leave on
   augment: true         # random horizontal flips; cheap variance reduction for faces
 
