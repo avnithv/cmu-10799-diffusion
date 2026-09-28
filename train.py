@@ -451,6 +451,11 @@ def train(
         if is_distributed:
             dist.barrier()
         start_step = load_checkpoint(resume_path, model, optimizer, ema, scaler, device)
+        # load_state_dict restores the checkpoint's param_groups (including its
+        # old lr), silently clobbering the config's value — re-apply so the
+        # config stays the source of truth (enables resume-with-lr-decay runs).
+        for group in optimizer.param_groups:
+            group['lr'] = training_config['learning_rate']
     
     # Training config
     num_iterations = training_config['num_iterations']
@@ -692,7 +697,7 @@ def main():
     train(
         method_name=args.method,
         config=config,
-        resume_path=args.resume,
+        resume_path=args.resume or config.get('checkpoint', {}).get('resume'),
         overfit_single_batch=args.overfit_single_batch,
     )
 
