@@ -58,13 +58,39 @@ verified exact at multiple strides. Note: a genuine step-count effect of a few
 steps — which made it the natural suspect for the floor; falsified anyway).
 Oracle test passes in both variance modes (mean path identical by construction).
 
-### OOM analysis (exp-b128c192)
-Died in the first forward pass at ~21.65 GB used with 22.7 GB reported free on
-a 44.4 GB L40 — allocations of every size failing: allocator **fragmentation**
-signature (interleaved cuDNN workspace probing + large activation tensors), not
-raw capacity. Activation demand was ~3× baseline (2× batch × 1.5× width).
-Mitigations adopted: batch 128→96 (−25% activations) AND
-`PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True` (PyTorch's own suggested fix).
+### OOM saga (exp-b128c192 → b96 → b64): three attempts, a real lesson
+
+**Attempt 1 (batch 128, 2026-09-27):** died 28s in, during the *first forward
+pass*, at ~21.65 GB used with **22.7 GB reported free** on a 44.4 GB L40 —
+allocations of every size failing. Activation demand was ~3× baseline
+(2× batch × 1.5× width). Initial read: caching-allocator fragmentation
+(interleaved cuDNN workspace probing + large activation tensors); adopted
+PyTorch's own suggested fix, `PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True`,
+plus batch 128→96.
+
+**Attempt 2 (batch 96 + expandable_segments, 2026-09-28):** died *instantly* at
+`model.to(device)` — uploading just the ~713 MB of weights to an empty GPU —
+with the driver reporting `CUDA_ERROR_OUT_OF_MEMORY from cuMemAddressReserve`.
+That API is the virtual-address-space reservation expandable_segments is built
+on: **the fix itself was the failure.** Our stack is a CUDA 13.0 torch runtime
+in forward-compatibility mode on a much older driver, and the driver-side VMM
+support expandable_segments needs isn't there. Corollary: attempt 1's
+"can't allocate with 22 GB free" at suspiciously-half-the-card now reads less
+like fragmentation and more like a **~21 GB effective mapping ceiling of the
+same runtime/driver mismatch**.
+
+**Attempt 3 (batch 64, no allocator env var — submitted 2026-09-28):** design
+under a ~21 GB working assumption: batch 64 × 192ch ≈ 13–15 GB total (safe);
+batch 96 would have been 20–21 GB (borderline). This turns the run into a
+**pure capacity test** — 1.5× width (178M) at the baseline batch — which is
+more interpretable than the original combined design anyway. Survival through
+minute one clears both prior failure points (weight upload, first forward).
+
+**Lesson for Q8/future runs:** the `2.14.0+cu130` wheel on this cluster's
+12.x-era drivers works for compute but has degraded memory semantics: ~half the
+card's VRAM effectively mappable, and VMM-based allocator features broken.
+The durable fix is an env built against the driver (e.g. `./setup-uv.sh
+cuda126` with a pinned index) — worth doing before any run that needs >20 GB.
 
 ## Decisions log
 
@@ -85,7 +111,9 @@ Mitigations adopted: batch 128→96 (−25% activations) AND
 
 ## Open items
 
-- In flight next: `exp-b96c192` (capacity+batch) and `exp-resume1e5` (decay).
+- In flight: `exp-b64c192` (pure capacity, attempt 3) and `exp-resume1e5`
+  (lr-decay resume, running since 2026-09-27; verify wandb train/learning_rate
+  = 1e-5 and start step = 100000).
 - **Reality-check the 0.005 target** on Piazza/with classmates — three sensible
   interventions floor at ~0.043 with a validated pipeline; knowing the class
   distribution decides whether to keep spending GPU-days.

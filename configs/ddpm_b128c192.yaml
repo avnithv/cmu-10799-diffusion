@@ -54,7 +54,7 @@ training:
   # Images per gradient step. Bounded by VRAM: ~64 fits any >=16GB card at
   # this model size; an L40/A100 (40-46GB) takes 128+. Larger batches give
   # smoother gradients but fewer steps per hour; diffusion tolerates 32-256.
-  batch_size: 96            # reduced from 128 after L40 OOM (fragmentation at ~21.6GB); pair with PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+  batch_size: 64            # attempt 3: pure 1.5x-width capacity test at baseline batch; ~21GB usable ceiling on this runtime/driver combo, and expandable_segments is incompatible (see docs/EXPERIMENT_JOURNAL.md)
   # Adam step size. The most sensitive scalar: 1e-4 is the de-facto standard
   # for 64x64 diffusion (Ho et al. used 2e-4 at 32x32). Range 1e-5 to 3e-4;
   # too high shows up as loss spikes/NaNs, too low as glacial convergence.
