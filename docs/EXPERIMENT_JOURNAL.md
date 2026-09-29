@@ -134,11 +134,33 @@ cgroup ran dry on a final 10 MB. Fixes for attempt 4: `num_workers` 8→4 and
 systems: GPU mapping ceiling (attempt 1), driver VMM (attempt 2), host cgroup
 (attempt 3) — same experiment, three different walls.
 
-## Open items
+## 2026-09-29: final experiment verdicts
 
-- To submit: capacity attempt 4 (`--mem=64G`, workers 4) and the standalone
-  KID eval of the finished resume model.
-- Piazza reality-check on the 0.005 target still outstanding.
+| experiment | KID | verdict |
+|---|---|---|
+| baseline (79M, 100k, lr 1e-4) | 0.0451 / 0.0472 | reference band 0.043–0.047 |
+| capacity attempt 4 (178M, batch 64, 100k) | **0.0433 ± 0.0007** | NULL — inside the band; capacity is not the binding constraint |
+| lr-decay resume (79M, +100k @ 1e-5, 200k total) | **0.0411 ± 0.0007** | small real gain (~2–3× run-to-run σ); train loss unchanged at 0.0150 — loss and KID decouple. **Best model**: `logs/ddpm_20260927_222014/checkpoints/ddpm_final.pt` |
+
+Five hypotheses tested in total (lr ×10, lr decay+longer, posterior variance,
+capacity, and implicitly batch via the aborted combined run); everything floors
+at ~0.041–0.047 against a pipeline validated to ≈0 bias. Conclusion: within
+this architecture/data/compute regime the model sits at KID ≈ 0.04; the
+handout's 0.005 was not reached by any single reasonable intervention, and the
+gap is unlikely to close without something categorically different (much longer
+training, different regime) — or different context on the target itself
+(Piazza check still outstanding).
+
+## Decision (2026-09-29): freeze and write
+
+- Adopt the 200k lr-decay model as THE reported model (KID 0.0411).
+- Re-run the full Q7 step ablation once on this model for an internally
+  consistent table (scripts/eval.sh auto-picks the newest final checkpoint,
+  which is now this one).
+- Then: writeup (Q4c with the validation story, Q7 table + samples, Q5, Q8),
+  no further training experiments.
+- Optional leftover idea (unpursued): quantify the ~2% dark/speckled sample
+  tail on the final model; diagnostic only.
 - **Reality-check the 0.005 target** on Piazza/with classmates — three sensible
   interventions floor at ~0.043 with a validated pipeline; knowing the class
   distribution decides whether to keep spending GPU-days.
