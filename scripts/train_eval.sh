@@ -43,5 +43,10 @@ echo "===== evaluating: $CKPT ====="
 ./scripts/evaluate_torch_fidelity.sh --checkpoint "$CKPT" --method ddpm \
     --dataset-path "$DATA" --num-steps 1000 2>&1 | tee "results/kid_${TAG}.txt"
 
+echo "===== sample grid (10x10 -> results/grids) ====="
+# non-fatal: the KID result above stands even if grid generation hiccups
+python scripts/sample_grid.py --runs "$RUN_DIR" --grid 10x10 --steps 1000 \
+    --outdir results/grids || echo "WARNING: grid generation failed (non-fatal)"
+
 echo "===== done: $TAG ====="
 grep -iH "kernel_inception" "results/kid_${TAG}.txt"

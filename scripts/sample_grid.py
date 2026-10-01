@@ -88,7 +88,7 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--runs", nargs="+", required=True,
                     help="run dirs (logs/ddpm_<ts>) and/or .pt checkpoint paths")
-    ap.add_argument("--grid", default="5x5", help="RxC, e.g. 5x5 (default)")
+    ap.add_argument("--grid", default="10x10", help="RxC, e.g. 10x10 (default)")
     ap.add_argument("--steps", type=int, default=1000, help="sampling steps (default 1000)")
     ap.add_argument("--seed", type=int, default=0,
                     help="same seed is reused for every run -> comparable tiles (default 0)")
