@@ -95,6 +95,8 @@ def main():
     ap.add_argument("--color", default="magenta",
                     help=f"divider color: {', '.join(COLORS)} or R,G,B (default magenta)")
     ap.add_argument("--pad", type=int, default=4, help="divider thickness in px (default 4)")
+    ap.add_argument("--batch_size", type=int, default=25,
+                    help="samples generated per chunk (default 25; keeps 10x10 grids within a 2080Ti's 11GB)")
     ap.add_argument("--variance", default="beta", choices=["beta", "posterior"])
     ap.add_argument("--no_ema", action="store_true", help="use raw training weights")
     ap.add_argument("--device", default="cuda")
@@ -125,9 +127,17 @@ def main():
         if device.type == "cuda":
             torch.cuda.manual_seed_all(args.seed)
 
+        # chunked generation: one batch of rows*cols OOMs small GPUs. Note the
+        # noise draws depend on the chunking, so keep --batch_size constant
+        # across runs you want tile-comparable (the default always is).
         with torch.no_grad():
-            samples = method.sample(batch_size=n, image_shape=image_shape,
-                                    num_steps=args.steps, variance=args.variance)
+            chunks, remaining = [], n
+            while remaining > 0:
+                b = min(args.batch_size, remaining)
+                chunks.append(method.sample(batch_size=b, image_shape=image_shape,
+                                            num_steps=args.steps, variance=args.variance))
+                remaining -= b
+            samples = torch.cat(chunks)
 
         imgs = unnormalize(samples.detach().cpu()).clamp(0, 1)
         tiles = (imgs.permute(0, 2, 3, 1).numpy() * 255).round().astype(np.uint8)
