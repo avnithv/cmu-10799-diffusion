@@ -1,3 +1,4 @@
+# Created 2026-09-26, batch 128->96->64 during OOM saga | run ddpm_20260928_111807 (KID 0.0433, null)
 # DDPM on CelebA-64 — CSB cluster config
 # Based on configs/ddpm_babel.yaml; every value annotated with what it does,
 # the usual range, and what drives the choice.

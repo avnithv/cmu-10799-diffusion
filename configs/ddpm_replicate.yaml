@@ -1,3 +1,4 @@
+# Created 2026-10-02 | replicate-padding fix, baseline recipe +1 line — border artifact experiment
 # DDPM on CelebA-64 — CSB cluster config
 # Based on configs/ddpm_babel.yaml; every value annotated with what it does,
 # the usual range, and what drives the choice.

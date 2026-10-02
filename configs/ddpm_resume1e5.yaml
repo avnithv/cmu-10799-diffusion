@@ -1,3 +1,4 @@
+# Created 2026-09-27 | lr-decay resume 100k->200k — run ddpm_20260927_222014 (KID 0.0411, BEST)
 # DDPM on CelebA-64 — CSB cluster config
 # Based on configs/ddpm_babel.yaml; every value annotated with what it does,
 # the usual range, and what drives the choice.

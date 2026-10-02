@@ -5,7 +5,9 @@ All KID = torch-fidelity mean vs `data/celeba/train/images` (63,715 imgs),
 1000 generated samples, EMA weights, σ²=β sampling unless noted.
 
 **Status: best model KID 0.0411** (`logs/ddpm_20260927_222014/checkpoints/ddpm_final.pt`,
-200k-step lr-decay resume). Experiments frozen 09-29; border artifact found 10-02.
+200k-step lr-decay resume). Border artifact found 10-02 and quantified: **~86%
+of KID is the 4px border zone** (crop test 0.0451 → 0.0062); replicate-padding
+fine-tune is the live fix experiment.
 
 ## 2026-10-02 — black-border artifact (user-spotted, verified)
 
@@ -18,12 +20,17 @@ All KID = torch-fidelity mean vs `data/celeba/train/images` (63,715 imgs),
 - Mechanism: zero-padded convs mark border pixels → learned border mean is dark
   (CelebA edges = background) → 1000 sampling steps compound the nudge into
   hard frames at ≫ real rate. Inception features highly sensitive to frames.
-- Actions:
-  - Test: `scripts/kid_border_test.sh` — KID with/without 4px center-crop on
-    BOTH sets; big drop = artifact quantified. PENDING.
-  - Fix drafted: `padding_mode` option (default `zeros`) threaded through all
-    six padded convs; `configs/ddpm_replicate.yaml` trains with `replicate`.
-    No new params; zeros checkpoints still load → fine-tune variant possible.
+- **Crop test result (baseline set): uncropped 0.0451 → cropped 0.00617.**
+  The 4px border zone carries **~86% of KID**; interior quality is essentially
+  at the 0.005 target. Explains all five null ablations (none touch padding).
+  Caveat: cropped KID is diagnostic only — the reportable number stays full-image.
+- Fix: `padding_mode` option (default `zeros` = bit-identical old behavior)
+  threaded through all six padded convs. Verified: same param count /
+  state_dict keys; zeros checkpoints load into replicate models.
+  - `configs/ddpm_replicate.yaml` — scratch retrain, verified identical to the
+    Sep-17 baseline recipe except `padding_mode: replicate` (one-variable
+    experiment, ~14h). Fine-tune variant considered and dropped — scratch is
+    the cleaner comparison.
 
 ## 2026-10-01/02 — witness analysis (per-sample KID attribution)
 
