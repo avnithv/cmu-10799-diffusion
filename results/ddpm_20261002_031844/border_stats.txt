@@ -1,0 +1,6 @@
+directory                                                   n  frame  inner  ratio  frame%  band%
+logs/ddpm_20261002_031844/checkpoints/samples/generated  1000  0.249  0.408   0.58    28.0   63.8
+witness_samples/baseline                                 1000  0.252  0.407   0.59    26.2   63.5
+data/celeba/train/images                                 2000  0.441  0.429   0.99     5.8   12.3
+
+ratio ~1.0 + frame%<~7 = matches real data; low ratio / high %s = border artifact
