@@ -111,8 +111,10 @@ def main():
     w = witness_scores(gen_feat, ref_feat)
 
     order = np.argsort(w)  # ascending: worst first
-    os.makedirs(args.outdir, exist_ok=True)
-    csv_path = os.path.join(args.outdir, f"witness_{args.tag}.csv")
+    # per-run folder: results/<tag>/witness{.csv,_worst.png,_best.png}
+    run_out = os.path.join(args.outdir, args.tag)
+    os.makedirs(run_out, exist_ok=True)
+    csv_path = os.path.join(run_out, "witness.csv")
     with open(csv_path, "w", newline="") as f:
         wr = csv.writer(f)
         wr.writerow(["rank", "file", "witness"])
@@ -122,11 +124,9 @@ def main():
     rows, cols = (int(v) for v in args.grid.lower().split("x"))
     n = rows * cols
     color = COLORS.get(args.color, (255, 0, 255))
-    grids_dir = os.path.join(args.outdir, "grids")
-    os.makedirs(grids_dir, exist_ok=True)
     for name, idx in (("worst", order[:n]), ("best", order[::-1][:n])):
         canvas = build_grid(tiles_from([gen_files[i] for i in idx]), rows, cols, 4, color)
-        out = os.path.join(grids_dir, f"witness_{name}_{args.tag}.png")
+        out = os.path.join(run_out, f"witness_{name}.png")
         Image.fromarray(canvas).save(out)
         print(f"{name} grid -> {out}")
 

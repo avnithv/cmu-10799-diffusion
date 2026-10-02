@@ -49,10 +49,10 @@ GEN="$(dirname "$CKPT")/samples/generated"
 python scripts/witness.py --generated "$GEN" --tag "$TAG" \
     || echo "WARNING: witness analysis failed (non-fatal)"
 
-echo "===== sample grid (10x10 -> results/grids) ====="
+echo "===== sample grid (10x10 -> results/$TAG) ====="
 # non-fatal: the KID result above stands even if grid generation hiccups
 python scripts/sample_grid.py --runs "$RUN_DIR" --grid 10x10 --steps 1000 \
-    --outdir results/grids || echo "WARNING: grid generation failed (non-fatal)"
+    --outdir "results/$TAG" || echo "WARNING: grid generation failed (non-fatal)"
 
 echo "===== done: $TAG ====="
 grep -iH "kernel_inception" "results/kid_${TAG}.txt"
