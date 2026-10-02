@@ -63,3 +63,8 @@ temp/
 .claude/
 
 dataset/
+# Diagnostic/scratch outputs (regenerable; huge file counts)
+border_test/
+kid_control/
+witness_samples/
+samples_posterior_var/
