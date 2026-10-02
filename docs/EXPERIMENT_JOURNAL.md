@@ -170,7 +170,28 @@ sample mildly under-represents the real data's diversity tails (pose,
 lighting, background variety) — not a tail of broken samples. This explains
 all five null/weak ablation results at once: nothing we turned addresses
 "uniformly slightly too generic," which is a training-regime property.
-Closes the investigation; written up as the Q4c/Q8 conclusion.
+
+### 2026-10-02 refinement: the shift has a face — BLACK BORDER ARTIFACT (user-spotted)
+
+User noticed worst-ranked tiles carry black borders. Verified numerically
+(outer 3px frame vs interior, per tile):
+- generated worst-25: frame/interior 0.52, 9–11/25 with black frames
+- generated best-25: 0.78–0.92, 3–4/25
+- REAL data (1500 sampled): frame/interior **0.99**, black-frame rate **6.3%**
+  — and the real "bordered" images are just dark-background photos, NOT
+  letterboxed. The crisp rectangular frames in generated samples do not
+  exist in the real distribution: **the model invented them.**
+
+Proposed mechanism: zero-padded convs make border pixels detectable; CelebA
+edges are background (dim on average) so the learned conditional mean at
+borders is dark; 1000 sampling steps compound the per-step nudge into hard
+frames at far above the real 6% rate. Inception features are highly sensitive
+to salient frame structure → KID inflation.
+
+Next: (1) decisive cheap test — KID on center-cropped 56×56 copies of both
+sets; a big drop quantifies the artifact's contribution. (2) If confirmed,
+the fix is padding_mode='replicate' in the convs — one-line model change,
+needs retraining.
 
 ## Decision (2026-09-29): freeze and write
 
