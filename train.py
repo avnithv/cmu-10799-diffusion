@@ -459,6 +459,10 @@ def train(
     
     # Training config
     num_iterations = training_config['num_iterations']
+    # gradient accumulation: effective batch = batch_size * grad_accum_steps
+    # at the memory footprint of batch_size (the ~22GB per-process VRAM
+    # ceiling on this cluster blocks large true batches)
+    grad_accum_steps = max(1, int(training_config.get('grad_accum_steps', 1)))
     log_every = training_config['log_every']
     sample_every = training_config['sample_every']
     save_every = training_config['save_every']
@@ -521,32 +525,36 @@ def train(
         disable=not is_main_process,
     )
     for step in pbar:
-        # Get batch (cycle through dataset or use single batch)
-        if overfit_single_batch:
-            batch = single_batch
-        else:
-            try:
-                batch = next(data_iter)
-            except StopIteration:
-                epoch += 1
-                if sampler is not None:
-                    sampler.set_epoch(epoch)
-                data_iter = iter(dataloader)
-                batch = next(data_iter)
-
-            if isinstance(batch, (tuple, list)):
-                batch = batch[0]  # Handle (image, label) tuples
-
-            batch = batch.to(device)
-        
-        # Forward pass with mixed precision
         optimizer.zero_grad()
-        
-        with autocast(device_type, enabled=config['infrastructure']['mixed_precision']):
-            loss, metrics = method.compute_loss(batch)
-        
-        # Backward pass
-        scaler.scale(loss).backward()
+
+        # Micro-batch loop: one optimizer step per `step`, gradients
+        # accumulated over grad_accum_steps forward/backward passes.
+        for _micro in range(grad_accum_steps):
+            # Get batch (cycle through dataset or use single batch)
+            if overfit_single_batch:
+                batch = single_batch
+            else:
+                try:
+                    batch = next(data_iter)
+                except StopIteration:
+                    epoch += 1
+                    if sampler is not None:
+                        sampler.set_epoch(epoch)
+                    data_iter = iter(dataloader)
+                    batch = next(data_iter)
+
+                if isinstance(batch, (tuple, list)):
+                    batch = batch[0]  # Handle (image, label) tuples
+
+                batch = batch.to(device)
+
+            # Forward pass with mixed precision
+            with autocast(device_type, enabled=config['infrastructure']['mixed_precision']):
+                loss, metrics = method.compute_loss(batch)
+
+            # Backward pass; loss scaled down so the accumulated gradient
+            # averages over the full effective batch
+            scaler.scale(loss / grad_accum_steps).backward()
         
         # Gradient clipping
         if gradient_clip_norm > 0:

@@ -1,4 +1,4 @@
-# Created 2026-10-02 | replicate-padding fix + batch 128 (THREE diffs vs baseline: padding, batch 128, fp16) — border-artifact fix / best-model run
+# Created 2026-10-02 | replicate-padding fix + batch 128 (diffs vs baseline: padding + effective batch 128 via accumulation) — border-artifact fix / best-model run
 # DDPM on CelebA-64 — CSB cluster config
 # Based on configs/ddpm_babel.yaml; every value annotated with what it does,
 # the usual range, and what drives the choice.
@@ -62,7 +62,7 @@ training:
   # Images per gradient step. Bounded by VRAM: ~64 fits any >=16GB card at
   # this model size; an L40/A100 (40-46GB) takes 128+. Larger batches give
   # smoother gradients but fewer steps per hour; diffusion tolerates 32-256.
-  batch_size: 128           # 2026-10-03: raised from 64 (user choice: best-model run; crop test already carries the padding attribution). ~21GB ceiling risk at 79M x b128 is low; OOM would be instant -> fall back to 64
+  batch_size: 64            # micro-batch; effective batch = 64 x grad_accum_steps = 128 (true b128 exceeds the ~22GB per-process VRAM ceiling; fp16 doesn't help because GroupNorm32 upcasts activations to fp32)
   # Adam step size. The most sensitive scalar: 1e-4 is the de-facto standard
   # for 64x64 diffusion (Ho et al. used 2e-4 at 32x32). Range 1e-5 to 3e-4;
   # too high shows up as loss spikes/NaNs, too low as glacial convergence.
@@ -86,6 +86,9 @@ training:
   ema_start: 5000
   # Clip gradient norm to this value. 1.0 is standard; range 0.5-2.0 (or off).
   # Cheap insurance against the occasional exploding step early in training.
+  # 2026-10-03: gradient accumulation — micro-batches per optimizer step;
+  # effective batch = batch_size * grad_accum_steps with batch_size's memory.
+  grad_accum_steps: 2
   gradient_clip_norm: 1.0
   # Total optimizer steps. Quality keeps improving slowly for a long time:
   # ~50k gives recognizable faces, 100k-200k is the sweet spot for this
@@ -135,7 +138,7 @@ infrastructure:
   # memory. Start false for the first verified run (one less variable when
   # debugging); flip to true afterwards if you want the speed — losses should
   # match to within noise.
-  mixed_precision: true     # 2026-10-03: required to fit batch 128 under the ~21.8GB per-process ceiling (fp32 b128 OOM'd at 21.8GB twice); also ~1.5-2x faster
+  mixed_precision: false    # no memory benefit here (GroupNorm32 fp32 upcasts dominate); keep numerics identical to baseline
   compile_model: false  # torch.compile; repo says only false is tested
 
 checkpoint:
