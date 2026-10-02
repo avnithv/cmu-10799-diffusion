@@ -151,6 +151,27 @@ gap is unlikely to close without something categorically different (much longer
 training, different regime) — or different context on the target itself
 (Piazza check still outstanding).
 
+## 2026-10-01/02: witness analysis — the closing diagnosis
+
+Built a per-sample "witness" score (w(x) = mean k(x, real) − mean k(x, gen),
+same inception-v3-compat features + cubic kernel as torch-fidelity's KID) and
+ranked every generated sample; worst/best 5×5 grids per run in `results/<run>/`.
+
+Findings:
+- **lr1e3 (control): worst 25 = pure noise.** Tool validated — it surfaces
+  catastrophe when catastrophe exists.
+- **baseline & resume1e5: worst 25 = ordinary, respectable faces.** NO
+  degenerate tail; the earlier "~2% garbage" fear does not exist at 1000 steps.
+- **best 25 = frontal, smooth, evenly-lit "classic CelebA" portraits**; worst
+  = off-axis poses, harsh lighting, dark/busy backgrounds.
+
+**Diagnosis: the ~0.041 KID floor is a GLOBAL distribution shift** — every
+sample mildly under-represents the real data's diversity tails (pose,
+lighting, background variety) — not a tail of broken samples. This explains
+all five null/weak ablation results at once: nothing we turned addresses
+"uniformly slightly too generic," which is a training-regime property.
+Closes the investigation; written up as the Q4c/Q8 conclusion.
+
 ## Decision (2026-09-29): freeze and write
 
 - Adopt the 200k lr-decay model as THE reported model (KID 0.0411).
