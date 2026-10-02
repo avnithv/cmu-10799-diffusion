@@ -9,6 +9,26 @@ All KID = torch-fidelity mean vs `data/celeba/train/images` (63,715 imgs),
 of KID is the 4px border zone** (crop test 0.0451 → 0.0062); replicate-padding
 fine-tune is the live fix experiment.
 
+## 2026-10-03 — ROOT CAUSE: leaky augmentation (RandomAffine fill=0)
+
+- `_build_transforms` applied `RandomAffine(translate=(0.1,0.1))` → shifts up
+  to ±6px, vacated strips filled BLACK (default fill=0). Plus ColorJitter
+  (±10% b/c/s) shifting color stats off the reference.
+- Measured on the real augmentation pipeline: **22% black-frame rate in the
+  training stream vs 6.3% clean**; one-sided bands near-ubiquitous. The model
+  learned the augmented distribution (textbook "augmentation leaking" —
+  StyleGAN2-ADA literature; DDPM used flips only for this reason).
+- Retro-explains: crop test (borders = 86% of KID), all null knob ablations,
+  replicate padding not helping (padding was never the cause).
+- Fix applied in celeba.py: **flip-only** augmentation. Fixed-pipeline frame
+  rate: 5.8% = matches reference.
+- Confidence framing: training-stream contamination, generated frames, and the
+  86% crop result are MEASURED; "removing the aug removes the borders" is the
+  hypothesis the cleanaug run tests (~85-90% prior).
+- Next runs: `ddpm_cleanaug.yaml` (baseline values; only variable = the
+  transform fix) via train_eval.sh; `scripts/diag_job.sh` to post-mortem the
+  replicate run (border_stats + trajectory diagnostics).
+
 ## 2026-10-02 — black-border artifact (user-spotted, verified)
 
 - Observation: worst witness tiles carry black frames; worse score ⇒ more border.

@@ -240,15 +240,17 @@ class CelebADataset(Dataset):
             transforms.Resize((self.image_size, self.image_size), antialias=True)
         )
 
-        # if self.augment and self.split == "train":
-        #     add random horizontal flip
-        #     add random jitter
+        # 2026-10-03: flip ONLY. Generative training learns the AUGMENTED
+        # distribution ("augmentation leaking"), and KID scores against the
+        # clean reference:
+        #   - RandomAffine(translate) filled vacated strips with black
+        #     (fill=0) -> 22% of the training stream had black frames vs 6.3%
+        #     in real data -> the model generated black borders, which the
+        #     crop test showed carried ~86% of our KID.
+        #   - ColorJitter shifted color/contrast statistics off the reference.
+        # Horizontal flip is safe: a mirrored face is still in-distribution.
         if self.augment and self.split == "train":
             transform_list.append(transforms.RandomHorizontalFlip(p=0.5))
-            transform_list.append(
-                transforms.ColorJitter(brightness=0.1, contrast=0.1, saturation=0.1)
-            )
-            transform_list.append(transforms.RandomAffine(degrees=0, translate=(0.1, 0.1)))
 
         # add convert to to tensor
         transform_list.append(transforms.ToTensor())
