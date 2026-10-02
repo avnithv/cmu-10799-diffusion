@@ -1,4 +1,4 @@
-# Created 2026-10-02 | replicate-padding fix + batch 128 (TWO diffs vs baseline recipe) — border-artifact fix / best-model run
+# Created 2026-10-02 | replicate-padding fix + batch 128 (THREE diffs vs baseline: padding, batch 128, fp16) — border-artifact fix / best-model run
 # DDPM on CelebA-64 — CSB cluster config
 # Based on configs/ddpm_babel.yaml; every value annotated with what it does,
 # the usual range, and what drives the choice.
@@ -135,7 +135,7 @@ infrastructure:
   # memory. Start false for the first verified run (one less variable when
   # debugging); flip to true afterwards if you want the speed — losses should
   # match to within noise.
-  mixed_precision: false
+  mixed_precision: true     # 2026-10-03: required to fit batch 128 under the ~21.8GB per-process ceiling (fp32 b128 OOM'd at 21.8GB twice); also ~1.5-2x faster
   compile_model: false  # torch.compile; repo says only false is tested
 
 checkpoint:
