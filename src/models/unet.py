@@ -74,6 +74,7 @@ class UNet(nn.Module):
         num_heads: int = 4,
         dropout: float = 0.1,
         use_scale_shift_norm: bool = True,
+        padding_mode: str = "zeros",
     ):
         super().__init__()
         
@@ -86,11 +87,12 @@ class UNet(nn.Module):
         self.num_heads = num_heads
         self.dropout = dropout
         self.use_scale_shift_norm = use_scale_shift_norm
+        self.padding_mode = padding_mode
 
         self.time_embed_dim =  4 * base_channels
         self.time_embedding = TimestepEmbedding(time_embed_dim=self.time_embed_dim)
         self.encoder = nn.ModuleList(
-            (nn.Conv2d(in_channels, base_channels, kernel_size=3, padding=1), )
+            (nn.Conv2d(in_channels, base_channels, kernel_size=3, padding=1, padding_mode=padding_mode), )
         )
 
         res = 64
@@ -102,14 +104,14 @@ class UNet(nn.Module):
             layers = nn.ModuleList()
 
             if level > 0:
-                layers.append(Downsample(cur_ch))
+                layers.append(Downsample(cur_ch, padding_mode=padding_mode))
                 skip_ch.append(cur_ch)
 
             for rb in range(num_res_blocks):
                 if rb == 0:
-                    layers.append(ResBlock(cur_ch, ch, self.time_embed_dim, dropout, use_scale_shift_norm))
+                    layers.append(ResBlock(cur_ch, ch, self.time_embed_dim, dropout, use_scale_shift_norm, padding_mode=padding_mode))
                 else:
-                    layers.append(ResBlock(ch, ch, self.time_embed_dim, dropout, use_scale_shift_norm))
+                    layers.append(ResBlock(ch, ch, self.time_embed_dim, dropout, use_scale_shift_norm, padding_mode=padding_mode))
 
                 if res in attention_resolutions:
                     layers.append(AttentionBlock(ch, num_heads=num_heads))
@@ -126,9 +128,9 @@ class UNet(nn.Module):
 
         self.middle = nn.ModuleList(
             (
-                ResBlock(cur_ch, cur_ch, self.time_embed_dim, dropout, use_scale_shift_norm),
+                ResBlock(cur_ch, cur_ch, self.time_embed_dim, dropout, use_scale_shift_norm, padding_mode=padding_mode),
                 AttentionBlock(cur_ch, num_heads=num_heads),
-                ResBlock(cur_ch, cur_ch, self.time_embed_dim, dropout, use_scale_shift_norm)
+                ResBlock(cur_ch, cur_ch, self.time_embed_dim, dropout, use_scale_shift_norm, padding_mode=padding_mode)
             )
         )
 
@@ -140,16 +142,16 @@ class UNet(nn.Module):
             layers = nn.ModuleList()
 
             if level < len(channel_mult) - 1:
-                layers.append(Upsample(cur_ch))
+                layers.append(Upsample(cur_ch, padding_mode=padding_mode))
 
             for rb in range(num_res_blocks + 1):
                 skip_con = skip_ch[-1]
                 del skip_ch[-1]
                 
                 if rb == 0:
-                    layers.append(ResBlock(cur_ch + skip_con, ch, self.time_embed_dim, dropout, use_scale_shift_norm))
+                    layers.append(ResBlock(cur_ch + skip_con, ch, self.time_embed_dim, dropout, use_scale_shift_norm, padding_mode=padding_mode))
                 else:
-                    layers.append(ResBlock(ch + skip_con, ch, self.time_embed_dim, dropout, use_scale_shift_norm))
+                    layers.append(ResBlock(ch + skip_con, ch, self.time_embed_dim, dropout, use_scale_shift_norm, padding_mode=padding_mode))
 
                 if res in attention_resolutions:
                     layers.append(AttentionBlock(ch, num_heads=num_heads))
@@ -166,7 +168,7 @@ class UNet(nn.Module):
         self.head = nn.Sequential(
             GroupNorm32(32, cur_ch),
             nn.SiLU(),
-            nn.Conv2d(cur_ch, out_channels, kernel_size=3, padding=1)
+            nn.Conv2d(cur_ch, out_channels, kernel_size=3, padding=1, padding_mode=padding_mode)
         )
 
     def forward(self, x: torch.Tensor, t: torch.Tensor) -> torch.Tensor:
@@ -240,6 +242,7 @@ def create_model_from_config(config: dict) -> UNet:
         num_heads=model_config['num_heads'],
         dropout=model_config['dropout'],
         use_scale_shift_norm=model_config['use_scale_shift_norm'],
+        padding_mode=model_config.get('padding_mode', 'zeros'),
     )
 
 
